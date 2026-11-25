@@ -1,0 +1,17 @@
+# Generated newspapers
+pdfs/
+*.pdf
+
+# Logs
+launchd.log
+launchd.err
+*.log
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
