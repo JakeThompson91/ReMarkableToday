@@ -1,8 +1,10 @@
 import datetime
 import html
 import json
+import os
 import random
 import re
+import shutil
 import subprocess
 import tempfile
 import urllib.request
@@ -24,12 +26,13 @@ FEEDS = {
     "The Verge": "https://www.theverge.com/rss/partner/subscriber-only-tech/rss.xml",
 }
 
-ARTICLES_PER_SECTION = 4
-NUM_XKCD = 3
-KEEP_DAYS = 7
-OUTPUT_DIR = Path.home() / "daily-newspaper" / "pdfs"
-RMAPI_BIN = Path.home() / "go/bin/rmapi"
-REMOTE_FOLDER = "/Daily Newspaper"
+ARTICLES_PER_SECTION = int(os.environ.get("ARTICLES_PER_SECTION", "4"))
+NUM_XKCD = int(os.environ.get("NUM_XKCD", "3"))
+KEEP_DAYS = int(os.environ.get("KEEP_DAYS", "7"))
+OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", str(Path.home() / "daily-newspaper" / "pdfs")))
+RMAPI_BIN = Path(os.environ.get("RMAPI_BIN") or shutil.which("rmapi") or str(Path.home() / "go/bin/rmapi"))
+REMOTE_FOLDER = os.environ.get("REMOTE_FOLDER", "/Daily Newspaper")
+SKIP_UPLOAD = os.environ.get("SKIP_UPLOAD", "").strip().lower() in ("1", "true", "yes")
 
 
 def normalize_text(raw: str) -> str:
@@ -267,29 +270,56 @@ def fetch_random_xkcd(count: int, temp_dir: Path) -> list[dict]:
 
 
 def setup_unicode_fonts(pdf: FPDF) -> str:
-    """Register macOS Georgia fonts with Arial Unicode fallback for arrows/symbols."""
-    supp = Path("/System/Library/Fonts/Supplemental")
-    georgia_reg = supp / "Georgia.ttf"
-    georgia_bold = supp / "Georgia Bold.ttf"
-    georgia_ital = supp / "Georgia Italic.ttf"
-    arial_uni = supp / "Arial Unicode.ttf"
+    """Register macOS Georgia or Linux Liberation Serif fonts with Unicode symbol fallback."""
+    has_fallback = False
+    fallback_candidates = [
+        (
+            Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
+        ),
+        (
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ),
+    ]
+    for fb_reg, fb_bold, fb_ital in fallback_candidates:
+        if fb_reg.exists():
+            pdf.add_font("Fallback", "", str(fb_reg))
+            pdf.add_font("Fallback", "B", str(fb_bold if fb_bold.exists() else fb_reg))
+            pdf.add_font("Fallback", "I", str(fb_ital if fb_ital.exists() else fb_reg))
+            has_fallback = True
+            break
 
-    if arial_uni.exists():
-        pdf.add_font("Fallback", "", str(arial_uni))
+    serif_families = [
+        (
+            Path("/System/Library/Fonts/Supplemental/Georgia.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Georgia Bold.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Georgia Italic.ttf"),
+        ),
+        (
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSerif-Italic.ttf"),
+        ),
+        (
+            Path("/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"),
+            Path("/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"),
+            Path("/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf"),
+        ),
+    ]
+    for reg, bold, ital in serif_families:
+        if reg.exists() and bold.exists() and ital.exists():
+            pdf.add_font("Editorial", "", str(reg))
+            pdf.add_font("Editorial", "B", str(bold))
+            pdf.add_font("Editorial", "I", str(ital))
+            if has_fallback:
+                pdf.set_fallback_fonts(["Fallback"])
+            return "Editorial"
 
-    if georgia_reg.exists() and georgia_bold.exists() and georgia_ital.exists():
-        pdf.add_font("Editorial", "", str(georgia_reg))
-        pdf.add_font("Editorial", "B", str(georgia_bold))
-        pdf.add_font("Editorial", "I", str(georgia_ital))
-        if arial_uni.exists():
-            pdf.set_fallback_fonts(["Fallback"])
-        return "Editorial"
-
-    if arial_uni.exists():
-        pdf.add_font("Editorial", "", str(arial_uni))
-        pdf.add_font("Editorial", "B", str(arial_uni))
-        pdf.add_font("Editorial", "I", str(arial_uni))
-        return "Editorial"
+    if has_fallback:
+        return "Fallback"
 
     return "Times"
 
@@ -598,6 +628,9 @@ def cleanup_old_editions(keep_days: int = KEEP_DAYS):
         old_file.unlink(missing_ok=True)
         print(f"Removed old local edition: {old_file.name}")
 
+    if SKIP_UPLOAD:
+        return
+
     res = subprocess.run(
         [str(RMAPI_BIN), "ls", REMOTE_FOLDER],
         capture_output=True,
@@ -627,8 +660,11 @@ def main():
     pdf_path = OUTPUT_DIR / f"Remarkable-Today-{today}.pdf"
 
     build_pdf(pdf_path, pretty_date)
-    subprocess.run([str(RMAPI_BIN), "put", "--force", str(pdf_path), REMOTE_FOLDER], check=True)
-    print(f"Successfully generated and uploaded {pdf_path.name} to {REMOTE_FOLDER}")
+    if SKIP_UPLOAD:
+        print(f"Successfully generated {pdf_path} (upload skipped via SKIP_UPLOAD)")
+    else:
+        subprocess.run([str(RMAPI_BIN), "put", "--force", str(pdf_path), REMOTE_FOLDER], check=True)
+        print(f"Successfully generated and uploaded {pdf_path.name} to {REMOTE_FOLDER}")
 
     cleanup_old_editions(keep_days=KEEP_DAYS)
 
