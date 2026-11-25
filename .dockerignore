@@ -1,0 +1,15 @@
+.git
+.gitignore
+README.md
+pdfs/
+*.pdf
+launchd.log
+launchd.err
+*.log
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+rmapi-config/
+rmapi.conf

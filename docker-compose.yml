@@ -1,0 +1,16 @@
+services:
+  newspaper:
+    build: .
+    image: remarkable-today:latest
+    environment:
+      TZ: ${TZ:-America/New_York}
+      REMOTE_FOLDER: ${REMOTE_FOLDER:-/Daily Newspaper}
+      ARTICLES_PER_SECTION: ${ARTICLES_PER_SECTION:-4}
+      NUM_XKCD: ${NUM_XKCD:-3}
+      KEEP_DAYS: ${KEEP_DAYS:-7}
+    volumes:
+      - ./pdfs:/app/pdfs
+      - rmapi_config:/config/rmapi
+
+volumes:
+  rmapi_config:

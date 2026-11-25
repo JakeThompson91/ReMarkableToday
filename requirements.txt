@@ -1,0 +1,5 @@
+beautifulsoup4>=4.12,<5
+feedparser>=6.0,<7
+fpdf2>=2.8,<3
+Pillow>=10.0,<12
+trafilatura>=1.12,<3

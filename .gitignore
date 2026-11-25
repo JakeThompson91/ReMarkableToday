@@ -15,3 +15,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# Local rmapi auth tokens (never commit)
+rmapi-config/
+rmapi.conf
